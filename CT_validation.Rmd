@@ -10,64 +10,68 @@ knitr::opts_chunk$set(echo = TRUE)
 Goals of the study
 
 The objective of the clinical validation study is to provide evidence in support of the safety and effectiveness of the CDx Test through testing:
-- Analytical accuracy of the CDx Test will be determined between the CDx Test and the validated reference, CTA, from specimens collected through a clinical trial.
-- Clinical accuracy concordance of CDx Test results and the CTA results obtained through a clinical trial will also be evaluated. 
+- Analytical accuracy of the CDx Test will be determined between the CDx Test and the validated reference, ORTH, from specimens collected through a clinical trial.
+- Clinical accuracy concordance of CDx Test results and clinical trial assay (CTA) results obtained through a clinical trial will also be evaluated. 
 
-```{r load packages}
+```{r install & load packages}
+install.packages("vegan", "dplyr", "boot", "mice")
+
 library(vegan)
 library(dplyr)
 library(boot)
+library(mice)
 ```
 
 ########## Analytical Accuracy ###############
 
 I am using a dataframe (AA) that contains data on patients with their respective disease metrics. Columns that are important are:
 1) CDx is the experimental test used for disease detection. Levels: POSITIVE, NEGATIVE, TNP (test not performed), UNK (unknown)
-2) CTA is the validated reference that will be used to determine the accuracy and efficacy of CDx Levels: POSITIVE, NEGATIVE, TNP (test not performed)
+2) ORTH is the validated reference that will be used to determine the accuracy and efficacy of CDx Levels: POSITIVE, NEGATIVE, TNP (test not performed)
 
 ```{r data}
 
 AA<-read.csv("Analytical_accuracy_Data.csv") #Analytical Accuracy
 attach(AA)
-AA <-AA[AA$CDx != 'TNP' & AA$CTA != 'TNP' ,] # Analytical Accuracy file without Tests not performed
+AA <-AA[AA$CDx != 'TNP' & AA$ORTH != 'TNP' ,] # Analytical Accuracy file without Tests not performed
 AA_no_unknown<-AA[AA$CDx != 'UNK',] # Analytical Accuracy file without unknowns
+AA_with_unknown<-AA # Analytical Accuracy file with unknowns (same as AA but renamed for clarity)
 
 # contingency table combinations
-n11<-sum(AA$CTA == "POSITIVE" & AA$CDx == "POSITIVE")
-n12<-sum(AA$CTA == "NEGATIVE" & AA$CDx == "POSITIVE")
-n21<-sum(AA$CTA == "POSITIVE" & AA$CDx == "NEGATIVE")
-n22<-sum(AA$CTA == "NEGATIVE" & AA$CDx == "NEGATIVE")
-n31<-sum(AA$CTA == "POSITIVE" & AA$CDx == "UNK")
-n32<-sum(AA$CTA == "NEGATIVE" & AA$CDx == "UNK")
+n11<-sum(AA$ORTH == "POSITIVE" & AA$CDx == "POSITIVE")
+n12<-sum(AA$ORTH == "NEGATIVE" & AA$CDx == "POSITIVE")
+n21<-sum(AA$ORTH == "POSITIVE" & AA$CDx == "NEGATIVE")
+n22<-sum(AA$ORTH == "NEGATIVE" & AA$CDx == "NEGATIVE")
+n31<-sum(AA$ORTH == "POSITIVE" & AA$CDx == "UNK")
+n32<-sum(AA$ORTH == "NEGATIVE" & AA$CDx == "UNK")
 
-#AA_with_unknown<-AA # Analytical Accuracy file with unknowns
+
 ```
 
-```{r Negative Percent Agreement (NPA) & Sensitivity Analysis}
+```{r Negative Percent Agreement (NPA)}
 
 # Negative Percent Agreement = Percentage of negative results of one test that are also been identified as negative samples by a reference (or another) test.
 
 # NPA no Unknowns
-NPA_no_unknown <- sum(AA_no_unknown$CTA == AA_no_unknown$CDx & AA_no_unknown$CTA == "NEGATIVE") / sum(AA_no_unknown$CTA == "NEGATIVE")
+NPA_no_unknown <- sum(AA_no_unknown$ORTH == AA_no_unknown$CDx & AA_no_unknown$ORTH == "NEGATIVE") / sum(AA_no_unknown$ORTH == "NEGATIVE")
 # 95% CI of NPA no Unknowns 
-AA_count_negatives_no_unknown <- sum(AA_no_unknown$CTA == "NEGATIVE") # count of negatives
+AA_count_negatives_no_unknown <- sum(AA_no_unknown$ORTH == "NEGATIVE") # count of negatives
 CI_NPA_no_unknown <- binom.test(x = NPA_no_unknown * AA_count_negatives_no_unknown, n = AA_count_negatives_no_unknown, conf.level = 0.95) # 95% Clopper-Pearson CI
 
 
 # NPA with Unknowns
-NPA_with_unknown <- sum(AA_with_unknown$CTA == AA_with_unknown$CDx & (AA_with_unknown$CTA == "NEGATIVE" | AA_with_unknown$CTA == "UNKNOWN")) /sum(AA_with_unknown$CTA == "NEGATIVE" | AA_with_unknown$CTA == "UNKNOWN") 
+NPA_with_unknown <- sum(AA_with_unknown$ORTH == AA_with_unknown$CDx & (AA_with_unknown$ORTH == "NEGATIVE" | AA_with_unknown$ORTH == "UNKNOWN")) /sum(AA_with_unknown$ORTH == "NEGATIVE" | AA_with_unknown$ORTH == "UNKNOWN") 
 # 95% CI of NPA with Unknowns 
-AA_count_negatives_with_unknown <- sum(AA_with_unknown$CTA == "NEGATIVE" | AA_with_unknown$CTA == "UNKNOWN") # count of negatives + unknowns
+AA_count_negatives_with_unknown <- sum(AA_with_unknown$ORTH == "NEGATIVE" | AA_with_unknown$ORTH == "UNKNOWN") # count of negatives + unknowns
 CI_NPA_with_unknown <- binom.test(x = NPA_with_unknown * AA_count_negatives_with_unknown, n = AA_count_negatives_with_unknown, conf.level = 0.95) # 95% Clopper-Pearson CI
 ```
 
 ```{r Sensitivity Analysis NPA}
 
 # The sensitivity analysis (SA) will recalculate the PPA and NPA by assuming the following scenarios:
-# •	All CDx-positive samples with missing Test results are assumed to be CDx Test-positive; or all CTA-negative samples with missing CDx Test results are assumed to be CDx Test negative, i.e., the best case, where c=1. 
-# •	All CDx-positive samples with missing CDx Test results are assumed to be CDx Test-negative; or all CTA-negative samples with missing CDx Test results are assumed to be CDx-positive. i.e., the worst case, where c=0.
-# •	CTA-positive samples with missing CDx Test results are assumed to be c CDx Test-positive with c values ranging from 0.2 to 0.8 with an increment of 0.2, and that (c x CDx Test-unknown) value will yield an integer count in the cells of the related contingency tables.
-# •	CTA-negative samples with missing CDx Test results are assumed to be c CDx Test-negative with c values ranging from 0.2 to 0.8 with an increment of 0.2, and that (c x CDx Test-unknown) value will yield an integer count in the cells of the related contingency tables.
+# •	All CDx-positive samples with missing Test results are assumed to be CDx Test-positive; or all ORTH-negative samples with missing CDx Test results are assumed to be CDx Test negative, i.e., the best case, where c=1. 
+# •	All CDx-positive samples with missing CDx Test results are assumed to be CDx Test-negative; or all ORTH-negative samples with missing CDx Test results are assumed to be CDx-positive. i.e., the worst case, where c=0.
+# •	ORTH-positive samples with missing CDx Test results are assumed to be c CDx Test-positive with c values ranging from 0.2 to 0.8 with an increment of 0.2, and that (c x CDx Test-unknown) value will yield an integer count in the cells of the related contingency tables.
+# •	ORTH-negative samples with missing CDx Test results are assumed to be c CDx Test-negative with c values ranging from 0.2 to 0.8 with an increment of 0.2, and that (c x CDx Test-unknown) value will yield an integer count in the cells of the related contingency tables.
 
 X <- c(0, 0.2, 0.4, 0.6, 0.8, 1) 
 
@@ -92,22 +96,22 @@ for (i in seq_along(X)) {
 # Positive Percent Agreement = Percentage of positive results of one test that that are also been identified as positive samples by a reference (or another) test
 
 ### PPA no Unknown###
-PPA_no_unknown <- sum(AA_no_unknown$CTA == AA_no_unknown$CDx & AA_no_unknown$CTA == "POSITIVE") / sum(AA_no_unknown$CTA == "POSITIVE") 
+PPA_no_unknown <- sum(AA_no_unknown$ORTH == AA_no_unknown$CDx & AA_no_unknown$ORTH == "POSITIVE") / sum(AA_no_unknown$ORTH == "POSITIVE") 
 
 # 95% CI of PPA no Unknowns 
-AA_count_positives_no_unknown <- sum(AA_no_unknown$CTA == "POSITIVE") # count of positives - unknowns
+AA_count_positives_no_unknown <- sum(AA_no_unknown$ORTH== "POSITIVE") # count of positives - unknowns
 CI_PPA_no_unknown <- binom.test(x = PPA_no_unknown * AA_count_positives_no_unknown, n = AA_count_positives_no_unknown, conf.level = 0.95) # 95% CI of PPA with Unknowns 
 
 ### PPA with Unknown###
-PPA_with_unknown <- sum(AA_with_unknown$CTA == AA_with_unknown$CDx & (AA_with_unknown$CTA == "POSITIVE" | AA_with_unknown$CTA == "UNKNOWN")) /sum(AA_with_unknown$CTA == "POSITIVE" | AA_with_unknown$CTA == "UNKNOWN")
+PPA_with_unknown <- sum(AA_with_unknown$ORTH == AA_with_unknown$CDx & (AA_with_unknown$ORTH == "POSITIVE" | AA_with_unknown$ORTH == "UNKNOWN")) /sum(AA_with_unknown$ORTH == "POSITIVE" | AA_with_unknown$ORTH == "UNKNOWN")
 
 # 95% CI of PPA with Unknowns 
-AA_count_positives_with_unknown <- sum(AA_with_unknownCTA == "POSITIVE" | AA_with_unknown$CTA == "UNK") # count of positives + unknowns
+AA_count_positives_with_unknown <- sum(AA_with_unknown$ORTH == "POSITIVE" | AA_with_unknown$ORTH == "UNK") # count of positives + unknowns
 CI_PPA_with_unknown <- binom.test(x = PPA_with_unknown * AA_count_positives_with_unknown, n = AA_count_positives_with_unknown, conf.level = 0.95) 
 ```
 
 ```{r Sensitivity Analysis PPA}
-### Sensitivity Analysis of CDx Test results vs. Orthogonal Assay XXX
+### Sensitivity Analysis of CDx Test results vs. ORTH
 X <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
 
 results_PPA <- numeric(length(X))
@@ -131,14 +135,14 @@ for (i in seq_along(X)) {
 # Overall Percent Agreement = Percentage of negative (or positive) results of one test that are also been identified as negative (or positive) samples by a reference (or another) test
 
 #OPA no Unknown
-OPA_no_unknown <- sum(AA_no_unknown$CTA == AA_no_unknown$CDx) / nrow(AA_no_unknown)
+OPA_no_unknown <- sum(AA_no_unknown$ORTH == AA_no_unknown$CDx) / nrow(AA_no_unknown)
 # 95% CI of OPA no Unknowns 
-CI_OPA_no_unknown <- binom.test(x = sum(AA_no_unknown$CTA == AA_no_unknown$CDx), n = nrow(AA_no_unknown), conf.level = 0.95) 
+CI_OPA_no_unknown <- binom.test(x = sum(AA_no_unknown$ORTH == AA_no_unknown$CDx), n = nrow(AA_no_unknown), conf.level = 0.95) 
 
 #OPA with Unknown
-OPA <- sum(AA_with_unknown$CTA == AA_with_unknown$CDx) / nrow(AA_with_unknown)
+OPA <- sum(AA_with_unknown$ORTH == AA_with_unknown$CDx) / nrow(AA_with_unknown)
 # 95% CI of OPA with Unknowns 
-CI_OPA_with_unknown <- binom.test(x = sum(AA_with_unknown$CTA == AA_with_unknown$CDx), n = nrow(AA_with_unknown), conf.level = 0.95) # 95% CI of OPA with Unknowns 
+CI_OPA_with_unknown <- binom.test(x = sum(AA_with_unknown$ORTH == AA_with_unknown$CDx), n = nrow(AA_with_unknown), conf.level = 0.95) # 95% CI of OPA with Unknowns 
 ```
 
 ```{r Sensitivity Analysis OPA}
@@ -162,60 +166,58 @@ for (i in seq_along(X)) {
 
 ########## Clinical Accuracy  ###############
 
-```{r Import data}
-# CLINICAL ACCURACY
-CA<-read.csv("Clinical_accuracy_Data.csv") #Clinical Accuracy
-CA <-CA[CA$CDx != 'TNP' & CA$CTA_BRAF_V600E != 'TNP' ,]
-CA_no_unknown<-CA[CA$CDx != 'UNK',] # CLinical accuracy file without unknowns
+```{r data}
+# Clinical Acciracy (CA)
+
+CA<-read.csv("Clinical_accuracy_Data.csv") # Clinical Accuracy csv
+CA <-CA[CA$CDx != 'TNP' & CA$CTA != 'TNP' ,]
+CA_no_unknown<-CA[CA$CDx != 'UNK',] # Clinical accuracy file without unknowns
+CA_with_unknown<-CA
 ```
 
+```{r NPA/PPA/OPA}
+# Negative Percent Agreement (NPA) = Percentage of negative results of one test that are also been identified as negative samples by a reference (or another) test.
+# Positive Percent Agreement (PPA) = Percentage of positive results of one test that that are also been identified as positive samples by a reference (or another) test
+# Overall Percent Agreement (OPA) = Percentage of negative (or positive) results of one test that are also been identified as negative (or positive) samples by a reference (or another) test
 
-```{r Concordance of CDx Test and CTA Results, PPA, NPA, OPA}
+# NPA
+NPA_CA_no_unk<- sum(CA_no_unknown$CTA == CA_no_unknown$CDx & CA_no_unknown$CTA == "NEGATIVE") / sum(CA_no_unknown$CTA == "NEGATIVE")
+# 95% CI of NPA no Unknowns 
+CA_count_negatives_no_unknown <- sum(CA_no_unknown$CTA == "NEGATIVE") # count of negatives - unknowns
+CI_CA_NPA_no_unknown <- binom.test(x = NPA_CA_no_unk * CA_count_negatives_no_unknown, n = CA_count_negatives_no_unknown, conf.level = 0.95) 
 
-###### NPA
-NPA_CA_no_unk<- sum(CA_no_unknown$CTA_BRAF_V600E == CA_no_unknown$CDx & CA_no_unknown$CTA_BRAF_V600E == "NEGATIVE") / sum(CA_no_unknown$CTA_BRAF_V600E == "NEGATIVE")
-NPA_CA_no_unk # 0.75
+# PPA
+PPA_CA_no_unk <- sum(CA_no_unknown$CTA == CA_no_unknown$CDx & CA_no_unknown$CTA == "POSITIVE") / sum(CA_no_unknown$CTA == "POSITIVE") 
+# 95% CI of PPA no Unknowns 
+CA_count_positives_no_unknown <- sum(CA_no_unknown$CTA == "POSITIVE") # count of positives
+CI_CA_PPA_no_unknown <- binom.test(x = PPA_CA_no_unk * CA_count_positives_no_unknown, n = CA_count_positives_no_unknown, conf.level = 0.95) 
 
-CA_count_NPA_no_unknown <- sum(CA_no_unknown$CTA_BRAF_V600E == "NEGATIVE") # count of negatives
-CI_CA_NPA_no_unknown <- binom.test(x = NPA_CA_no_unk * CA_count_NPA_no_unknown, n = CA_count_NPA_no_unknown, conf.level = 0.95) # Clopper-Pearson CI
-CI_CA_NPA_no_unknown # 0.1941204 0.9936905
-
-###### PPA
-PPA_CA_no_unk <- sum(CA_no_unknown$CTA_BRAF_V600E == CA_no_unknown$CDx & CA_no_unknown$CTA_BRAF_V600E == "POSITIVE") / sum(CA_no_unknown$CTA_BRAF_V600E == "POSITIVE") 
-PPA_CA_no_unk # 1
-
-CA_count_PPA_no_unknown <- sum(CA_no_unknown$CTA_BRAF_V600E == "POSITIVE") # count of negatives
-CI_CA_PPA_no_unknown <- binom.test(x = PPA_CA_no_unk * CA_count_PPA_no_unknown, n = CA_count_PPA_no_unknown, conf.level = 0.95) # Clopper-Pearson CI
-CI_CA_PPA_no_unknown # 0.8677254 1.0000000
-
-###### OPA 
-OPA_CA_no_unknown <- sum(CA_no_unknown$CTA_BRAF_V600E == CA_no_unknown$CDx) / nrow(CA_no_unknown)
-OPA_CA_no_unknown # 0.9666667
-
-CI_OPA_no_unknown <- binom.test(x = sum(CA_no_unknown$CTA_BRAF_V600E == CA_no_unknown$CDx), n = nrow(CA_no_unknown), conf.level = 0.95) #Clopper-Pearson
-CI_OPA_no_unknown # 0.8278305 0.9991564
-
+# OPA 
+OPA_CA_no_unknown <- sum(CA_no_unknown$CTA == CA_no_unknown$CDx) / nrow(CA_no_unknown)
+# 95% CI of PPA no Unknowns 
+CI_OPA_no_unknown <- binom.test(x = sum(CA_no_unknown$CTA == CA_no_unknown$CDx), n = nrow(CA_no_unknown), conf.level = 0.95) 
 ```
 
-```{r PPV, NPV}
-#### PPV ####
+```{r Positive predictive value (PPV) }
+# Positive predictive value (PPV) = conditional probability of the CTA results being positive given that the CDx Test results being positive 
+# 2 different prevalences of disease in the population: 52% and 84.2% 
+
 prevalence <- c(0.52, 0.842)
-CA_PVV <- vector("numeric", length(prevalence))
 
+# PPV
+CA_PPV <- vector("numeric", length(prevalence))
 for (i in 1:length(prevalence)) {
-  numerator <- prevalence[i] * mean(CA_no_unknown$CDx[CA_no_unknown$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE")
-  denominator <- numerator + (1 - prevalence[i]) * mean(CA_no_unknown$CDx[CA_no_unknown$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE")
-  CA_PVV[i] <- numerator / denominator
+  numerator <- prevalence[i] * mean(CA_no_unknown$CDx[CA_no_unknown$CTA == "POSITIVE"] == "POSITIVE")
+  denominator <- numerator + (1 - prevalence[i]) * mean(CA_no_unknown$CDx[CA_no_unknown$CTA == "NEGATIVE"] == "POSITIVE")
+  CA_PPV[i] <- numerator / denominator
 }
-CA_PVV # 0.81250 0.95519
 
-# CI bootstrap percentile method, using 1000 bootstrap samples.
+# 95% CI bootstrap percentile method, using 1000 bootstrap samples.
 CA_PPV_statistic <- function(data, indices, prevalence) {
   subset_data <- data[indices, ]
-  ppa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "POSITIVE") / sum(subset_data$CTA_BRAF_V600E == "POSITIVE") 
-  npa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "NEGATIVE") / sum(subset_data$CTA_BRAF_V600E == "NEGATIVE")
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
   adjusted_ppv <- (ppa * prevalence) / ((ppa * prevalence) + ((1 - prevalence) * (1 - npa)))
-  
   return(adjusted_ppv)
 }
 
@@ -235,26 +237,29 @@ for (i in 1:length(prevalence)) {
   print(boot_ci[[i]])
   cat("\n")
 }
+```
 
-#### NPV ####  
+```{r Negative predictive value (NPV)}
+# Negative predictive value (NPV) = the conditional probability of the CTA results being negative given that the CDx Test results being negative
+# 2 different prevalences of disease in the population: 52% and 84.2% 
+
 prevalence <- c(0.52, 0.842)
-CA_NPV <- vector("numeric", length(prevalence))
 
+#NPV
+
+CA_NPV <- vector("numeric", length(prevalence))
 for (i in 1:length(prevalence)) {
-  numerator <- (1 - prevalence[i]) * (1 - mean(CA_no_unknown$CDx[CA_no_unknown$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE"))
-  denominator <- numerator + prevalence[i] * (1 - mean(CA_no_unknown$CDx[CA_no_unknown$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE"))
+  numerator <- (1 - prevalence[i]) * (1 - mean(CA_no_unknown$CDx[CA_no_unknown$CTA == "NEGATIVE"] == "POSITIVE"))
+  denominator <- numerator + prevalence[i] * (1 - mean(CA_no_unknown$CDx[CA_no_unknown$CTA == "POSITIVE"] == "POSITIVE"))
   CA_NPV[i] <- numerator / denominator
 }
-CA_NPV
 
-## NPV CI 
-prevalence <- c(0.52, 0.842)
+# NPV 95% CI bootstrap percentile method, using 1000 bootstrap samples.
 CA_NPV_statistic <- function(data, indices, prevalence) {
   subset_data <- data[indices, ]
-  ppa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "POSITIVE") / sum(subset_data$CTA_BRAF_V600E == "POSITIVE") 
-  npa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "NEGATIVE") / sum(subset_data$CTA_BRAF_V600E == "NEGATIVE")
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
   adjusted_npv <- (1-prevalence)*(1-npa) / ((1-prevalence)*(1-npa)+prevalence*(1-ppa))
-  
   return(adjusted_npv)
 }
 
@@ -272,24 +277,19 @@ for (i in 1:length(prevalence)) {
   cat("\n")
 }
 
-#0.52  1-1
-#0.842 1-1
 ```
 
-```{r 9.4.3	Sensitivity Analysis of CDx Test results vs. enrollment CTA assay}
+```{r impute datasets}
+# To account for missing CDx Test results, sensitivity analysis for PPA and NPA (using the CTA assay result as reference) as well as for PPV and NPV (using CDxT results as reference) will be conducted
+# The sensitivity analysis will employ the multiple imputation method using fully conditional specification (FCS) method to impute the missing CDx results. WARNING: This method is from SAS and cannot be exactly replicated in R. However, my results were very close to the SAS code I was validating.
 
-# To account for missing CDx Test results, sensitivity analysis for PPA and NPA (using the enrollment CTA assay result as reference) as well as for PPV and NPV (using CDxT results as reference) will be conducted.
-
-# The sensitivity analysis will employ the multiple imputation method using fully conditional specification (FCS) method to impute the missing CDx results. 
-library(mice)
-
-CA_imputed <- read.csv("/Users/kirstengrond/Desktop/Biostat_Bridge_Sonata/Sonata_CV_Analysis_Data.csv")
-CA_impute_data_full <- CA_imputed[, c("CDx", "CTA_BRAF_V600E", "Age.at.Prescreening", "Gender", "Ethnicity", "SSA", "Tumor_Content", "effuse")]
-CA_impute_data_full$CTA_BRAF_V600E <- factor(CA_impute_data_full$CTA_BRAF_V600E, levels = c("POSITIVE", "NEGATIVE"))
+CA_imputed <- read.csv("Clinical_accuracy_Data.csv")
+CA_impute_data_full <- CA_imputed[, c("CDx", "CTA", "Age", "Gender", "Ethnicity", "Variable_1", "Variable_2", "Variable_3")]
+CA_impute_data_full$CTA <- factor(CA_impute_data_full$CTA, levels = c("POSITIVE", "NEGATIVE"))
 CA_impute_data_full$CDx <- factor(CA_impute_data_full$CDx, levels = c("POSITIVE", "NEGATIVE", "TNP", "UNK"))
 CA_impute_data_full$CDx[CA_impute_data_full$CDx %in% c("TNP", "UNK")] <- NA
 
-# Create a 100 imputed datasets and combine them with a new column identifying the different datasets  
+# Create 100 imputed datasets and combine them with a new column identifying the different datasets  
 m <- 100
 completed_datasets <- list()
 for (i in 1:m) {
@@ -300,20 +300,18 @@ for (i in 1:m) {
   completed_datasets[[i]] <- completed_data
 }
 combined_data <- do.call(rbind, completed_datasets)
+```
 
+```{r Sensitivity Analysis PPV}
+# PPV 
+# calculate PPV and CIs for each of the 100 imputed datasets, 
 
-#The imputed datasets will then be used to estimate PPA, NPA, PPV, and NPV as well as the associated 95% CIs. The multiple imputation will be implemented using SAS PROC MI procedure with the FCS statement.
+prevalence=0.52
 
-###### PPV #####
-## for each of the 100 datasets, calculate PPV and CIs, put them in a dataframe. 
-library(boot)
-library(dplyr)
-
-# 0.52
 CA_PPV_0.52_statistic <- function(data, indices, prevalence) {
   subset_data <- data[indices, ]
-  ppa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "POSITIVE") / sum(subset_data$CTA_BRAF_V600E == "POSITIVE") 
-  npa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "NEGATIVE") / sum(subset_data$CTA_BRAF_V600E == "NEGATIVE")
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
   adjusted_ppv <- (ppa * prevalence) / ((ppa * prevalence) + ((1 - prevalence) * (1 - npa)))
   return(adjusted_ppv)
 }
@@ -325,7 +323,7 @@ colnames(boot_results_means_df) <- c("Mean_boot_results_0.52", "Lower_CI_0.52", 
 # Iterate over each imputed dataset
 for (i in 1:m) {
   dataset <- combined_data[combined_data$DatasetNumber == i, ]
-  boot_results <- boot(data = dataset, statistic = CA_PPV_0.52_statistic, R = 1014, prevalence = 0.842)
+  boot_results <- boot(data = dataset, statistic = CA_PPV_0.52_statistic, R = 1000, prevalence = 0.842)
   mean_boot_results <- mean(boot_results$t, na.rm = TRUE)
   ci <- boot.ci(boot_results, type = "perc", conf = 0.95)
   lower_ci <- ci$percent[4]
@@ -333,23 +331,20 @@ for (i in 1:m) {
   variance <- var(boot_results$t, na.rm = TRUE) 
   boot_results_means_df[i, ] <- c(mean_boot_results, lower_ci, upper_ci,variance)
 }
-print(boot_results_means_df)
-
 means <- colMeans(boot_results_means_df, na.rm = TRUE)
 print(means)
-# PVV 0.842 mean: 0.9594757 CI: 0.8937418 - 1.0000000 variance: 0.0009799347 
-# PVV 0.52 mean: 0.8421201  CI: 0.6352322 - 1.0000000 variance: 0.01228791 
 
 
-# 0.842
+
+prevalence=0.52
+
 CA_PPV_0.842_statistic <- function(data, indices, prevalence) {
   subset_data <- data[indices, ]
-  ppa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "POSITIVE") / sum(subset_data$CTA_BRAF_V600E == "POSITIVE") 
-  npa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "NEGATIVE") / sum(subset_data$CTA_BRAF_V600E == "NEGATIVE")
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
   adjusted_ppv <- (ppa * prevalence) / ((ppa * prevalence) + ((1 - prevalence) * (1 - npa)))
   return(adjusted_ppv)
 }
-
 m <- max(combined_data$DatasetNumber)
 boot_results_means_df <- data.frame(matrix(ncol = 3, nrow = m))
 colnames(boot_results_means_df) <- c("Mean_boot_results_0.842", "Lower_CI_0.842", "Upper_CI_0.842")
@@ -364,16 +359,19 @@ for (i in 1:m) {
   upper_ci <- ci$percent[5]
   boot_results_means_df[i, ] <- c(mean_boot_results, lower_ci, upper_ci)
 }
+```
 
-print(boot_results_means_df)
+```{r Sensitivity Analysis NPV}
 
-###### NPV ####
-## for each of the 100 datasets, calculate NPV and CIs, put them in a dataframe.
-# Define the CA_PPV_statistic function
+#NPV
+# calculate NPV and CIs for each of the 100 imputed datasets 
+
+prevalence=0.52
+
 CA_NPV_0.52_statistic <- function(data, indices, prevalence) {
   subset_data <- data[indices, ]
-  ppa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "POSITIVE") / sum(subset_data$CTA_BRAF_V600E == "POSITIVE") 
-  npa <- sum(subset_data$CTA_BRAF_V600E == subset_data$CDx & subset_data$CTA_BRAF_V600E == "NEGATIVE") / sum(subset_data$CTA_BRAF_V600E == "NEGATIVE")
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
   adjusted_npv <- (1-prevalence)*(1-npa) / ((1-prevalence)*(1-npa)+prevalence*(1-ppa))
   
   return(adjusted_npv)
@@ -397,42 +395,67 @@ for (i in 1:m) {
 print(boot_results_means_df)
 means <- colMeans(boot_results_means_df, na.rm = TRUE)
 print(means)
-# NPV 0.842 mean: 1 CI: 1-1
-# NPV 0.52 mean: 1 CI: 1-1
+
+##
+prevalence=0.842
+
+CA_NPV_0.842_statistic <- function(data, indices, prevalence) {
+  subset_data <- data[indices, ]
+  ppa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "POSITIVE") / sum(subset_data$CTA == "POSITIVE") 
+  npa <- sum(subset_data$CTA == subset_data$CDx & subset_data$CTA == "NEGATIVE") / sum(subset_data$CTA == "NEGATIVE")
+  adjusted_npv <- (1-prevalence)*(1-npa) / ((1-prevalence)*(1-npa)+prevalence*(1-ppa))
+  
+  return(adjusted_npv)
+}
+
+# Number of imputations
+m <- max(combined_data$DatasetNumber)
+boot_results_means_df <- data.frame(matrix(ncol = 3, nrow = m))
+colnames(boot_results_means_df) <- c("Mean_boot_results_0.842", "Lower_CI_0.842", "Upper_CI_0.842")
+
+# Iterate over each imputed dataset
+for (i in 1:m) {
+  dataset <- combined_data[combined_data$DatasetNumber == i, ]
+  boot_results <- boot(data = dataset, statistic = CA_NPV_0.52_statistic, R = 1000, prevalence = 0.842)
+  mean_boot_results <- mean(boot_results$t, na.rm = TRUE)
+  ci <- boot.ci(boot_results, type = "perc", conf = 0.95)
+  lower_ci <- ci$percent[4]
+  upper_ci <- ci$percent[5]
+  boot_results_means_df[i, ] <- c(mean_boot_results, lower_ci, upper_ci)
+}
+print(boot_results_means_df)
+means <- colMeans(boot_results_means_df, na.rm = TRUE)
+print(means)
 ```
 
-```{r 9.4.4	Primary clinical efficacy analysis based on CDx Test results}
+```{r Primary clinical efficacy analysis}
 
 # scenario_1 <- All missing CDxT results are concordant with CTA
 # scenario_2 <- All missing CDxT results are discordant with CTA
 # scenario_3 <- PVV  multiple imputation
 
-####### SCENARIO 1 Calculate PVV for scenario 1.  all missing values in ODXT match CTA#####
-CA_scenario_1<-read.csv("/Users/kirstengrond/Desktop/Biostat_Bridge_Sonata/Sonata_CV_Analysis_Data.csv")
+####### SCENARIO 1 PVV 
+CA_scenario_1<-CA
 CA_scenario_1$CDx[CA_scenario_1$CDx %in% c("TNP", "UNK")] <- NA
-CA_scenario_1$CDx[is.na(CA_scenario_1$CDx)] <- CA_scenario_1$CTA_BRAF_V600E[is.na(CA_scenario_1$CDx)]
+CA_scenario_1$CDx[is.na(CA_scenario_1$CDx)] <- CA_scenario_1$CTA[is.na(CA_scenario_1$CDx)]
 CA_scenario_1$CDx <- factor(CA_scenario_1$CDx, levels = c("POSITIVE", "NEGATIVE"))
-CA_scenario_1$CTA_BRAF_V600E <- factor(CA_scenario_1$CTA_BRAF_V600E, levels = c("POSITIVE", "NEGATIVE"))
+CA_scenario_1$CTA <- factor(CA_scenario_1$CTA, levels = c("POSITIVE", "NEGATIVE"))
 
 prevalence <- c(0.52, 0.842)
 PPV_Scenario_1 <- vector("numeric", length(prevalence))
 for (i in 1:length(prevalence)) {
-  numerator <- prevalence[i] * mean(CA_scenario_1$CDx[CA_scenario_1$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE")
-  denominator <- numerator + (1 - prevalence[i]) * mean(CA_scenario_1$CDx[CA_scenario_1$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE")
+  numerator <- prevalence[i] * mean(CA_scenario_1$CDx[CA_scenario_1$CTA == "POSITIVE"] == "POSITIVE")
+  denominator <- numerator + (1 - prevalence[i]) * mean(CA_scenario_1$CDx[CA_scenario_1$CTA == "NEGATIVE"] == "POSITIVE")
   PPV_Scenario_1[i] <- numerator / denominator
 }
-PPV_Scenario_1 # 0.8666667 0.9696737
 
-### VARIANCE PPV Scenario 1
-
-# Prevalence values
-prevalence <- c(0.52, 0.842)
+# VARIANCE PPV Scenario 1
 PPV_variances <- vector("numeric", length(prevalence))
 for (i in 1:length(prevalence)) {
   statistic <- function(data, indices) {
     resampled_data <- data[indices, ]
-    numerator <- prevalence[i] * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE")
-    denominator <- prevalence[i] * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE") + (1 - prevalence[i]) * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE")
+    numerator <- prevalence[i] * mean(resampled_data$CDx[resampled_data$CTA == "POSITIVE"] == "POSITIVE")
+    denominator <- prevalence[i] * mean(resampled_data$CDx[resampled_data$CTA == "POSITIVE"] == "POSITIVE") + (1 - prevalence[i]) * mean(resampled_data$CDx[resampled_data$CTA == "NEGATIVE"] == "POSITIVE")
     PPV_resampled <- numerator / denominator
     
     return(PPV_resampled)
@@ -448,22 +471,21 @@ for (i in 1:length(prevalence)) {
   cat("Variance:", PPV_variances[i], "\n\n")
 }
 
-########## SCENARIO 2 Calculate PPV_Scenario_2 all missing values in ODXT are the complement of CTA#####
-CA_scenario_2<-read.csv("/Users/kirstengrond/Desktop/Biostat_Bridge_Sonata/Sonata_CV_Analysis_Data.csv")
+########## SCENARIO 2 PPV all missing values in CDx are the complement of CTA
+CA_scenario_2<-CA
 CA_scenario_2$CDx[CA_scenario_2$CDx %in% c("TNP", "UNK")] <- NA
-CA_scenario_2$CDx[is.na(CA_scenario_2$CDx)] <- ifelse(CA_scenario_2$CTA_BRAF_V600E[is.na(CA_scenario_2$CDx)] == "POSITIVE", "NEGATIVE", "POSITIVE")
+CA_scenario_2$CDx[is.na(CA_scenario_2$CDx)] <- ifelse(CA_scenario_2$CTA[is.na(CA_scenario_2$CDx)] == "POSITIVE", "NEGATIVE", "POSITIVE")
 
 prevalence <- c(0.52, 0.842)
-PPV_Scenario_2 <- vector("numeric", length(prevalence))
 
+PPV_Scenario_2 <- vector("numeric", length(prevalence))
 for (i in 1:length(prevalence)) {
-  numerator <- prevalence[i] * mean(CA_scenario_2$CDx[CA_scenario_2$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE")
-  denominator <- numerator + (1 - prevalence[i]) * mean(CA_scenario_2$CDx[CA_scenario_2$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE")
+  numerator <- prevalence[i] * mean(CA_scenario_2$CDx[CA_scenario_2$CTA == "POSITIVE"] == "POSITIVE")
+  denominator <- numerator + (1 - prevalence[i]) * mean(CA_scenario_2$CDx[CA_scenario_2$CTA == "NEGATIVE"] == "POSITIVE")
   PPV_Scenario_2[i] <- numerator / denominator
 }
-PPV_Scenario_2 # 0.6377358 0.8964783
 
-# VARIANCE SCENARIO 2
+# VARIANCE PPV Scenario 2
 prevalence=c(0.52, 0.842)
 n_bootstrap <- 1000  # Number of bootstrap iterations
 bootstrap_samples <- numeric(n_bootstrap)  # Initialize the vector to store bootstrap samples
@@ -472,144 +494,63 @@ for (prevalence in prevalence_values) {
   for (i in 1:n_bootstrap) {
     # Perform bootstrap sampling with replacement
     resampled_data <- CA_scenario_1[sample(nrow(CA_scenario_1), replace = TRUE), ]
-    PPV_Scenario_1_resampled <- (prevalence * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE") / (prevalence * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "POSITIVE"] == "POSITIVE") + (1 - prevalence) * mean(resampled_data$CDx[resampled_data$CTA_BRAF_V600E == "NEGATIVE"] == "POSITIVE")))
+    PPV_Scenario_1_resampled <- (prevalence * mean(resampled_data$CDx[resampled_data$CTA == "POSITIVE"] == "POSITIVE") / (prevalence * mean(resampled_data$CDx[resampled_data$CTA == "POSITIVE"] == "POSITIVE") + (1 - prevalence) * mean(resampled_data$CDx[resampled_data$CTA == "NEGATIVE"] == "POSITIVE")))
     bootstrap_samples[i] <- PPV_Scenario_1_resampled
   }
   
   PPV_Scenario_1_variance <- var(bootstrap_samples, na.rm = TRUE)
   cat("PPV_Scenario_1 variance for prevalence =", prevalence, "is", PPV_Scenario_1_variance, "\n")
 }
+```
 
-##### ORR POINT ESTIMATES ####
-PPV_Scenario_1_0.52<-0.8666667
-PPV_Scenario_2_0.52<-0.6377358
-PPV_Scenario_1_0.842<-0.9696737  
-PPV_Scenario_2_0.842<- 0.8964783
+```{r Clinical efficacy point estimates (ORR)}
+
+# Clinical efficacy point estimates (ORR). Values below were obtained from the PVV analyses above. Here replaced by random numbers. 
+PPV_Scenario_1_0.52<-0.8
+PPV_Scenario_2_0.52<-0.6
+PPV_Scenario_1_0.842<-0.7
+PPV_Scenario_2_0.842<- 0.4
+
+# drug efficacy (here set to 0.7)
+delta<-0.7
 
 PPV_values<- c(PPV_Scenario_1_0.52 = PPV_Scenario_1_0.52, PPV_Scenario_2_0.52 = PPV_Scenario_2_0.52, PPV_Scenario_1_0.842 = PPV_Scenario_1_0.842, PPV_Scenario_2_0.842 = PPV_Scenario_2_0.842)
 
-delta_1<-0.5555556
 c_values <- c(0, 0.25, 0.5, 0.75, 1)
 
 for (p_name in names(PPV_values)) {
   p <- PPV_values[p_name]
   for (c in c_values) {
-    ORR <- ((1 - c) * p + c) * delta_1
+    ORR <- ((1 - c) * p + c) * delta
     cat("ORR for p =", p_name, "and c =", c, "is", ORR, "\n")
   }
   cat("\n")
 }
 
-#Scenario 3 multiple imputation
-p_scenario_3=0.9594757
-c_values <- c(0, 0.25, 0.5, 0.75, 1)
-
-for (c in c_values) {
-  ORR <- ((1 - c) * p_scenario_3 + c) * delta_1
-  cat("ORR for c =", c, "is", ORR, "\n")
-}
 
 #### VARIANCE ORR
 n=18
 p=0.5555556
-PPV <- c(0.9594757, 0.8964783, 0.9696737)
-Var_PPV <- c(0.0009799347,0.0007766403,0.0007766403)  # Corresponding Var_PPV values for each PPV value
+PPV <- c(0.4, 0.5,0.6) # plug in your values calculated in the Primary clinical efficacy analysis section
+Var_PPV <- c(0.001,0.002,0.003)  # Corresponding Var_PPV values for each PPV value calculated above
 c_values <- c(0, 0.25, 0.5, 0.75, 1)
-Var_delta_1 <-(var(rbinom(1000, n, p)))/n^2 #0.01353217
+Var_delta <-(var(rbinom(1000, n, p)))/n^2 
 
 for (i in seq_along(PPV)) {
   ppv <- PPV[i]
   var_ppv <- Var_PPV[i]
   
   for (c in c_values) {
-    variance <- (2 * ppv^2 - 2 * ppv + 1) * Var_delta_1 + (((1 - c)^2) * (Var_delta_1^2) + 2 * Var_delta_1) * var_ppv
+    variance <- (2 * ppv^2 - 2 * ppv + 1) * Var_delta + (((1 - c)^2) * (Var_delta^2) + 2 * Var_delta) * var_ppv
     cat("PPV =", ppv, "Variance for PPV =", var_ppv, "and c =", c, "is", variance, "\n")
   }
   cat("\n")
 }
 
-## CONFIDENCE INTERVALS ORR ##
-point_estimate <- c(0.5555556,0.5555556,0.5555556)
-variance_ORR<-c(0.01021917,0.007630686,0.01069316)
+# CONFIDENCE INTERVALS ORR 
+ORR <- c(0.5,0.6,0.57) # calculated above
+variance_ORR<-c(0.001,0.002,0.003) # calculated above
 stdev<-sqrt(variance_ORR)
 point_estimate - (1.96 * (sqrt(variance_ORR)))
 point_estimate + (1.96 * (sqrt(variance_ORR)))
 ```
-
-```{r demographics}
-
-#### CDx Evaluable ####
-mean_age_no_unknown<-mean(CA_no_unknown$Age.at.Prescreening) # 67.56667
-SD_age_no_unknown<-sd(CA_no_unknown$Age.at.Prescreening) # 7.568917
-
-#Gender
-female_percentage <- 100 * sum(CA_no_unknown$Gender == "Female") / length(CA_no_unknown$Gender) #46.66667
-male_percentage <- 100 * sum(CA_no_unknown$Gender == "Male") / length(CA_no_unknown$Gender) #53.33333
-
-#Cancer Type
-ATC<-100 * sum(CA_no_unknown$Histological.Classification == "Anaplastic Thyroid Carcinoma") / length(CA_no_unknown$Histological.Classification) # 26.66667
-DTC<-100 * sum(CA_no_unknown$Histological.Classification == "Differentiated Thyroid Carcinoma") / length(CA_no_unknown$Histological.Classification) # 73.33333
-
-# Specimen Type
-Resection<-100 * sum(CA_no_unknown$BiospecTyp == "Resection") / length(CA_no_unknown$BiospecTyp) #83.33333
-CNB<-100 * sum(CA_no_unknown$BiospecTyp == "CNB") / length(CA_no_unknown$BiospecTyp) #16.66667
-
-#Baseline ECOG
-base_1<-100 * sum(CA_no_unknown$Baseline.ECOG == 1) / length(CA_no_unknown$Baseline.ECOG) #43.33333
-base_0<-100 * sum(CA_no_unknown$Baseline.ECOG == 0) / length(CA_no_unknown$Baseline.ECOG) #26.66667
-base_unk<-100 * sum(CA_no_unknown$Baseline.ECOG == "Unknown") / length(CA_no_unknown$Baseline.ECOG) #30
-
-#SSA
-mean_SSA_no_unknown<-mean(CA_no_unknown$SSA) # 192.9
-SD_SSA_no_unknown<-sd(CA_no_unknown$SSA) # 156.2697
-
-#Percent Necrosis
-mean_Necrosis_no_unknown<-mean(CA_no_unknown$Percent_Necrosis) # 0.3666667
-SD_Necrosis_no_unknown<-sd(CA_no_unknown$Percent_Necrosis) # 1.828573
-
-#Tumor content
-mean_content_no_unknown<-mean(CA_no_unknown$Tumor_Content) # 39.33333
-SD_content_no_unknown<-sd(CA_no_unknown$Tumor_Content) # 26.676
-
-
-#### CDx Unevaluable ####
-CA_all<-read.csv("/Users/kirstengrond/Desktop/Biostat_Bridge_Sonata/Sonata_CV_Analysis_Data.csv")
-CA_unev <-CA_all[CA_all$CDx %in% c("TNP", "UNK"), ]
-
-mean_age_unev<-mean(CA_unev$Age.at.Prescreening) # 61.875
-SD_age_unev<-sd(CA_unev$Age.at.Prescreening) # 9.249517
-
-#Gender
-female_percentage_unev <- 100 * sum(CA_unev$Gender == "Female") / length(CA_unev$Gender) # 62.5
-male_percentage_unev <- 100 * sum(CA_unev$Gender == "Male") / length(CA_unev$Gender) # 37.5
-
-#Cancer Type
-ATC_unev<-100 * sum(CA_unev$Histological.Classification == "Anaplastic Thyroid Carcinoma") / length(CA_unev$Histological.Classification) # 37.5
-DTC_unev<-100 * sum(CA_unev$Histological.Classification == "Differentiated Thyroid Carcinoma") / length(CA_unev$Histological.Classification) # 62.5
-
-# Specimen Type
-Resection_unev<-100 * sum(CA_unev$BiospecTyp == "Resection") / length(CA_unev$BiospecTyp) #25
-CNB_unev<-100 * sum(CA_unev$BiospecTyp == "CNB") / length(CA_unev$BiospecTyp) #62.5
-End_Biop_unev<-100 * sum(CA_unev$BiospecTyp == "Other (specify)") / length(CA_unev$BiospecTyp) #12.5
-
-#Baseline ECOG
-base_1_unev<-100 * sum(CA_unev$Baseline.ECOG == 1) / length(CA_unev$Baseline.ECOG) #37.5
-base_0_unev<-100 * sum(CA_unev$Baseline.ECOG == 0) / length(CA_unev$Baseline.ECOG) #37.5
-base_unk_unev<-100 * sum(CA_unev$Baseline.ECOG == "Unknown") / length(CA_unev$Baseline.ECOG) #25
-
-#SSA
-CA_unev_SSA<-CA_unev[complete.cases(CA_unev$SSA), ]
-mean_SSA_no_unknown_unev<-mean(CA_unev_SSA$SSA) # 26.14286
-SD_SSA_no_unknown_unev<-sd(CA_unev_SSA$SSA) # 34.8589
-
-#Percent Necrosis
-mean_Necrosis_no_unknown_unev<-mean(CA_unev$Percent_Necrosis) # 0.3666667
-SD_Necrosis_no_unknown_unev<-sd(CA_unev$Percent_Necrosis) # 1.828573
-
-#Tumor content
-CA_unev_content<-CA_unev[complete.cases(CA_unev$Tumor_Content), ]
-mean_content_no_unknown_unev<-mean(CA_unev_content$Tumor_Content) # 22.28571
-SD_content_no_unknown_unev<-sd(CA_unev_content$Tumor_Content) # 15.54257
-
-```
-
